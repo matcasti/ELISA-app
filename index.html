@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ELISA · Curve Analyst</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="style.css" rel="stylesheet">
+</head>
+<body>
+<div class="modal-backdrop" id="welcomeModal" role="dialog" aria-modal="true" aria-labelledby="modalHeading">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()" aria-label="Close welcome dialog">✕</button>
+    <div class="modal-badge">Welcome</div>
+    <h1 class="modal-title" id="modalHeading">ELISA · Curve Analyst</h1>
+    <p class="modal-body">
+      A professional-grade standard curve fitting and back-calculation platform for ELISA assays.
+      Import your reference standards, choose a regression model, and instantly quantify unknown samples —
+      all in the browser with no data leaving your machine.
+    </p>
+    <div class="modal-steps">
+      <div class="modal-step">
+        <div class="modal-step-num">01</div>
+        <div class="modal-step-text"><strong>Reference Standards</strong>Paste concentration &amp; OD values, select a curve model, then click "Fit Reference Curve".</div>
+      </div>
+      <div class="modal-step">
+        <div class="modal-step-num">02</div>
+        <div class="modal-step-text"><strong>Choose a Model</strong>Linear, 4PL/5PL sigmoidal, polynomial, spline &amp; more. R² and RMSE guide your choice.</div>
+      </div>
+      <div class="modal-step">
+        <div class="modal-step-num">03</div>
+        <div class="modal-step-text"><strong>Sample Quantification</strong>Paste unknown sample absorbances — concentrations are back-calculated automatically.</div>
+      </div>
+      <div class="modal-step">
+        <div class="modal-step-num">04</div>
+        <div class="modal-step-text"><strong>Export Results</strong>Download as Excel, CSV, TSV or JSON, or copy the table directly into your spreadsheet.</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <span class="modal-footer-note">⚡ All processing runs locally — no data is transmitted</span>
+      <button class="btn btn-primary" onclick="closeModal()">Get Started →</button>
+    </div>
+  </div>
+</div>
+<div class="particles" id="particles"></div>
+
+<header>
+  <div class="logo">
+    <svg width="38" height="38" viewBox="0 0 38 38" fill="none">
+      <circle cx="19" cy="19" r="17" stroke="url(#lg1)" stroke-width="1.5"/>
+      <path d="M7 27 Q13 9 19 19 Q25 29 31 11" stroke="#00e5ff" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+      <circle cx="19" cy="19" r="2.5" fill="#7b61ff"/>
+      <circle cx="7" cy="27" r="2" fill="#00e5ff"/>
+      <circle cx="31" cy="11" r="2" fill="#00e5ff"/>
+      <defs><linearGradient id="lg1" x1="0" y1="0" x2="38" y2="38"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#7b61ff"/></linearGradient></defs>
+    </svg>
+    <div>
+      <div class="logo-title">ELISA · Analyst</div>
+      <div class="logo-sub">Curve Fitting &amp; Quantification System</div>
+    </div>
+  </div>
+  <div class="header-status"><div class="status-dot"></div>SYSTEM READY</div>
+  <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode" aria-label="Toggle theme">
+    <svg id="themeIcon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z"/></svg>
+  </button>
+</header>
+
+<div class="tabs-container">
+  <button class="tab active" id="tab1" onclick="switchTab(1)"><div class="tab-num">01</div>Reference Curve</button>
+  <button class="tab disabled" id="tab2" onclick="switchTab(2)"><div class="tab-num">02</div>Sample Quantification</button>
+</div>
+
+<main>
+  <!-- PANEL 1 -->
+  <div class="panel active" id="panel1">
+    <div class="panel-inner">
+      <div class="left-col">
+        <div class="section-label">Step 01</div>
+        <div class="section-title">Reference Standards</div>
+        <div class="section-desc">Paste concentration and absorbance values from Excel. One value per row, or paste two columns (Conc[Tab]OD) in the combined field.</div>
+        <div class="input-group">
+          <div class="input-label">Concentration Values<span class="input-hint">Column A</span></div>
+          <textarea id="concInput" rows="7" placeholder="0.1&#10;0.5&#10;1&#10;2&#10;5&#10;10&#10;20&#10;50"></textarea>
+        </div>
+        <div class="input-group">
+          <div class="input-label">Absorbance (OD) Values<span class="input-hint">Column B</span></div>
+          <textarea id="absInput" rows="7" placeholder="0.048&#10;0.165&#10;0.309&#10;0.572&#10;1.108&#10;1.863&#10;2.298&#10;2.891"></textarea>
+        </div>
+        <div class="alert alert-info">💡 Or paste two columns at once (Conc[Tab]OD per row) below — the two fields above will be ignored.</div>
+        <div class="input-group">
+          <div class="input-label">Two-column paste (Conc[Tab]OD)<span class="input-hint">Optional</span></div>
+          <textarea id="twoColInput" rows="5" placeholder="0.1&#9;0.048&#10;1&#9;0.309&#10;10&#9;1.863"></textarea>
+        </div>
+        <div class="divider"></div>
+        <div class="model-select-label">SELECT CURVE MODEL</div>
+        <div class="model-grid">
+          <div class="model-card active" onclick="selectModel('linear')" id="m-linear"><div class="model-name"><div class="check">✓</div>Linear</div><div class="model-eq">y = ax + b</div></div>
+          <div class="model-card" onclick="selectModel('poly2')" id="m-poly2"><div class="model-name"><div class="check">✓</div>Polynomial 2°</div><div class="model-eq">y = ax² + bx + c</div></div>
+          <div class="model-card" onclick="selectModel('exponential')" id="m-exponential"><div class="model-name"><div class="check">✓</div>Exponential</div><div class="model-eq">y = a·e^(bx)</div></div>
+          <div class="model-card" onclick="selectModel('log')" id="m-log"><div class="model-name"><div class="check">✓</div>Logarithmic</div><div class="model-eq">y = a·ln(x) + b</div></div>
+          <div class="model-card" onclick="selectModel('power')" id="m-power"><div class="model-name"><div class="check">✓</div>Power Law</div><div class="model-eq">y = a·x^b</div></div>
+          <div class="model-card" onclick="selectModel('4pl')" id="m-4pl"><div class="model-name"><div class="check">✓</div>4PL Sigmoid</div><div class="model-eq">y=D+(A-D)/(1+(x/C)^B)</div></div>
+          <div class="model-card" onclick="selectModel('5pl')" id="m-5pl"><div class="model-name"><div class="check">✓</div>5PL Sigmoid</div><div class="model-eq">y=D+(A-D)/(1+(x/C)^B)^E</div></div>
+          <div class="model-card" onclick="selectModel('spline')" id="m-spline"><div class="model-name"><div class="check">✓</div>Cubic Spline</div><div class="model-eq">piecewise cubic</div></div>
+        </div>
+        <button class="btn btn-primary" onclick="fitCurve()" style="width:100%;justify-content:center">⚡ Fit Reference Curve</button>
+      </div>
+      <div class="right-col">
+        <div class="stats-bar">
+          <div class="stat-item"><div class="stat-value" id="stat-r2">—</div><div class="stat-label">R² Value</div></div>
+          <div class="stat-item"><div class="stat-value" id="stat-rmse">—</div><div class="stat-label">RMSE</div></div>
+          <div class="stat-item"><div class="stat-value" id="stat-n">—</div><div class="stat-label">Points</div></div>
+          <div class="stat-item"><div class="stat-value" id="stat-model">—</div><div class="stat-label">Model</div></div>
+        </div>
+        <div class="chart-wrap">
+          <div class="chart-header"><div class="chart-title">ABSORBANCE vs CONCENTRATION · REFERENCE CURVE</div><div class="chart-badge" id="r2badge">Awaiting Data</div></div>
+          <canvas id="refChart" height="270"></canvas>
+        </div>
+        <div class="chart-wrap">
+          <div class="chart-header"><div class="chart-title">RESIDUALS PLOT</div></div>
+          <canvas id="residChart" height="150"></canvas>
+        </div>
+        <div id="curveEquation" style="display:none" class="alert alert-success"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL 2 -->
+  <div class="panel" id="panel2">
+    <div class="locked-overlay" id="lockedOverlay">
+      <svg class="locked-icon" viewBox="0 0 44 44"><rect x="9" y="19" width="26" height="20" rx="4"/><path d="M15 19v-6a7 7 0 0114 0v6"/><circle cx="22" cy="29" r="2"/></svg>
+      <div class="locked-text">Complete reference curve fitting in Panel 01<br>to unlock sample quantification</div>
+    </div>
+    <div class="panel-inner">
+      <div class="left-col">
+        <div class="section-label">Step 02</div>
+        <div class="section-title">Sample Quantification</div>
+        <div class="section-desc">Paste unknown sample absorbance values. The fitted standard curve will back-calculate concentrations automatically.</div>
+        <div class="input-group">
+          <div class="input-label">Sample Absorbance Values<span class="input-hint">One per row</span></div>
+          <textarea id="sampleAbsInput" rows="10" placeholder="0.215&#10;0.478&#10;0.891&#10;1.354&#10;0.623&#10;1.102&#10;0.387"></textarea>
+        </div>
+        <div class="input-group">
+          <div class="input-label">Sample Labels (optional)<span class="input-hint">One per row</span></div>
+          <textarea id="sampleLabels" rows="5" placeholder="Sample_01&#10;Sample_02&#10;Control_Pos&#10;Unknown_A&#10;Unknown_B"></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="predictConcentrations()" style="width:100%;justify-content:center">🔬 Calculate Concentrations</button>
+        <div id="copySection" style="display:none">
+          <div class="divider"></div>
+          <div class="section-label">Export Data</div>
+          <div class="btn-group">
+            <button class="btn btn-secondary btn-sm" onclick="copyTable()">📋 Copy Table (Excel)</button>
+            <button class="btn btn-secondary btn-sm" onclick="copyCSV()">Copy as CSV</button>
+          </div>
+          <div class="download-section">
+            <div class="section-label" style="margin-bottom:10px">Download File</div>
+            <div class="download-grid">
+              <button class="dl-btn" onclick="downloadXLSX()">
+                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8l3 4-3 4M13 16h4"/></svg>Excel (.xlsx)
+              </button>
+              <button class="dl-btn" onclick="downloadCSV()">
+                <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="14 3 14 9 20 9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>CSV
+              </button>
+              <button class="dl-btn" onclick="downloadTSV()">
+                <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="14 3 14 9 20 9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg>TSV
+              </button>
+              <button class="dl-btn" onclick="downloadJSON()">
+                <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>JSON
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="right-col">
+        <div class="stats-bar" id="sampleStats" style="display:none">
+          <div class="stat-item"><div class="stat-value" id="s-stat-n">—</div><div class="stat-label">Samples</div></div>
+          <div class="stat-item"><div class="stat-value" id="s-stat-min">—</div><div class="stat-label">Min Conc</div></div>
+          <div class="stat-item"><div class="stat-value" id="s-stat-max">—</div><div class="stat-label">Max Conc</div></div>
+          <div class="stat-item"><div class="stat-value" id="s-stat-oor">—</div><div class="stat-label">Out of Range</div></div>
+        </div>
+        <div class="chart-wrap" id="sampleChartWrap" style="display:none">
+          <div class="chart-header"><div class="chart-title">SAMPLES OVERLAID ON REFERENCE CURVE</div></div>
+          <canvas id="sampleChart" height="290"></canvas>
+        </div>
+        <div class="results-table-wrap" id="resultsWrap" style="display:none">
+          <div class="results-table-header"><div class="results-table-title">Quantification Results</div><div class="chart-badge" id="resultsBadge">—</div></div>
+          <div style="max-height:310px;overflow-y:auto">
+            <table class="results-table" id="resultsTable">
+              <thead><tr><th>#</th><th>Label</th><th>Absorbance</th><th>Concentration</th><th>Status</th></tr></thead>
+              <tbody id="resultsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="notification" id="notification"></div>
+
+<script src="engine.js"></script>
+
+<footer>
+  Made with <span class="footer-heart">♥</span> by
+  <a href="#" tabindex="-1">Matías Castillo-Aguilar</a>
+</footer>
+</body>
+</html>
