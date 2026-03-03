@@ -33,7 +33,7 @@ document.addEventListener('keydown',function(e){
 });
 
 // ── State ────────────────────────────────────────────────────────────────────
-var S={refConc:[],refAbs:[],model:'linear',fitFn:null,inverseFn:null,r2:null,curveReady:false,sampleResults:[]};
+var S={refConc:[],refAbs:[],model:'linear',fitFn:null,inverseFn:null,r2:null,curveReady:false,sampleResults:[],decSep:'.'};
 
 // ── Particles ─────────────────────────────────────────────────────────────────
 (function(){var c=document.getElementById('particles'),cols=['#00e5ff','#7b61ff','#ff4d8d'];
@@ -42,6 +42,36 @@ p.style.cssText='left:'+Math.random()*100+'vw;animation-duration:'+(9+Math.rando
 c.appendChild(p);}})();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function setDecSep(sep){
+  S.decSep=sep;
+  document.getElementById('ds-dot').classList.toggle('active',sep==='.');
+  document.getElementById('ds-comma').classList.toggle('active',sep===',');
+  showN(sep==='.'
+    ? '· Decimal separator set to DOT (1.00)'
+    : '· Decimal separator set to COMMA (1,00)');
+}
+
+/* Normalise a raw string token to a JS-parseable float string */
+function normNum(str){
+  var s=str.trim();
+  if(S.decSep===','){
+    // comma = decimal → strip thousands dots, then swap comma→dot
+    s=s.split('.').join('').split(',').join('.');
+  } else {
+    // dot = decimal → strip thousands commas, keep dot
+    s=s.split(',').join('');
+  }
+  return s;
+}
+
+/* Format a JS number back to a string using the chosen separator */
+function fmtNum(val,decimals){
+  if(typeof val!=='number'||isNaN(val))return'N/A';
+  var s=val.toFixed(decimals!==undefined?decimals:6);
+  if(S.decSep===',')s=s.replace('.',',');
+  return s;
+}
+
 function switchTab(n){
   if(n===2&&!S.curveReady)return;
   document.querySelectorAll('.tab').forEach(function(t,i){t.classList.toggle('active',i===n-1);});
@@ -55,15 +85,24 @@ function selectModel(m){
 }
 
 function parseVals(txt){
-  return txt.split('\n').map(function(l){return l.trim().replace(',','.');})
-    .filter(function(l){return l!=='';}).map(parseFloat).filter(function(v){return !isNaN(v);});
+  return txt.split('\n')
+    .map(function(l){return normNum(l);})
+    .filter(function(l){return l!=='';})
+    .map(parseFloat)
+    .filter(function(v){return !isNaN(v);});
 }
 
 function parseTwoCols(txt){
   var conc=[],abs=[];
+  // When decimal sep is comma, only split columns on tab or semicolon (never on comma)
+  var colSplitRe=S.decSep===','?/\t|;/:/\t|,|;/;
   txt.split('\n').filter(function(l){return l.trim();}).forEach(function(l){
-    var p=l.trim().split(/\t|,|;/).map(function(x){return parseFloat(x.replace(',','.'));});
-    if(p.length>=2&&!isNaN(p[0])&&!isNaN(p[1])){conc.push(p[0]);abs.push(p[1]);}
+    var parts=l.trim().split(colSplitRe);
+    if(parts.length>=2){
+      var v0=parseFloat(normNum(parts[0]));
+      var v1=parseFloat(normNum(parts[1]));
+      if(!isNaN(v0)&&!isNaN(v1)){conc.push(v0);abs.push(v1);}
+    }
   });
   return{conc:conc,abs:abs};
 }
@@ -338,7 +377,17 @@ function drawSampleChart(){
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────
-function getRows(){return S.sampleResults.map(function(r,i){return{Index:i+1,Label:r.label,Absorbance:r.abs,Concentration:isNaN(r.conc)||r.conc<=0?'N/A':r.conc,Status:r.oor?'Out of Range':'OK'};});}
+function getRows(){
+  return S.sampleResults.map(function(r,i){
+    return{
+      Index:i+1,
+      Label:r.label,
+      Absorbance:fmtNum(r.abs,4),
+      Concentration:isNaN(r.conc)||r.conc<=0?'N/A':fmtNum(r.conc,4),
+      Status:r.oor?'Out of Range':'OK'
+    };
+  });
+}
 
 function copyTable(){
   var d=getRows(),h=Object.keys(d[0]).join('\t');
@@ -347,18 +396,36 @@ function copyTable(){
 }
 
 function copyCSV(){
-  var d=getRows(),h=Object.keys(d[0]).join(',');
-  var txt=[h].concat(d.map(function(r){return Object.values(r).join(',');})).join('\n');
-  navigator.clipboard.writeText(txt).then(function(){showN('✅ CSV copied to clipboard');});
+  var delim=S.decSep===','?';':',';
+  var d=getRows(),h=Object.keys(d[0]).join(delim);
+  var txt=[h].concat(d.map(function(r){return Object.values(r).join(delim);})).join('\n');
+  navigator.clipboard.writeText(txt).then(function(){showN('✅ CSV copied'+(S.decSep===','?' (semicolon-delimited for EU locale)':''));});
 }
 
-function downloadCSV(){var d=getRows(),h=Object.keys(d[0]).join(','),rows=d.map(function(r){return Object.values(r).join(',');});dlFile([h].concat(rows).join('\n'),'elisa_results.csv','text/csv');showN('⬇️ CSV downloaded');}
+function downloadCSV(){
+  var delim=S.decSep===','?';':',';
+  var d=getRows(),h=Object.keys(d[0]).join(delim);
+  var rows=d.map(function(r){return Object.values(r).join(delim);});
+  dlFile([h].concat(rows).join('\n'),'elisa_results.csv','text/csv');
+  showN('⬇️ CSV downloaded'+(S.decSep===','?' (semicolon-delimited)':''));
+}
 
 function downloadTSV(){var d=getRows(),h=Object.keys(d[0]).join('\t'),rows=d.map(function(r){return Object.values(r).join('\t');});dlFile([h].concat(rows).join('\n'),'elisa_results.tsv','text/tab-separated-values');showN('⬇️ TSV downloaded');}
 
 function downloadJSON(){
-  var data={model:S.model,r2:S.r2,referenceData:S.refConc.map(function(v,i){return{concentration:v,absorbance:S.refAbs[i]};}),sampleResults:S.sampleResults};
-  dlFile(JSON.stringify(data,null,2),'elisa_results.json','application/json');showN('⬇️ JSON downloaded');
+  var data={
+    model:S.model,
+    decimalSeparator:S.decSep,
+    r2:S.r2,
+    referenceData:S.refConc.map(function(v,i){
+      return{concentration:fmtNum(v,6),absorbance:fmtNum(S.refAbs[i],6)};
+    }),
+    sampleResults:S.sampleResults.map(function(r){
+      return{label:r.label,absorbance:fmtNum(r.abs,4),concentration:isNaN(r.conc)||r.conc<=0?'N/A':fmtNum(r.conc,4),status:r.oor?'Out of Range':'OK'};
+    })
+  };
+  dlFile(JSON.stringify(data,null,2),'elisa_results.json','application/json');
+  showN('⬇️ JSON downloaded');
 }
 
 function downloadXLSX(){

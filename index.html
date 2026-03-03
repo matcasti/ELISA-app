@@ -80,6 +80,15 @@
         <div class="section-label">Step 01</div>
         <div class="section-title">Reference Standards</div>
         <div class="section-desc">Paste concentration and absorbance values from Excel. One value per row, or paste two columns (Conc[Tab]OD) in the combined field.</div>
+
+        <div class="dec-sep-widget" title="Decimal separator used in your data and exports">
+          <span class="dec-sep-widget-label">Decimal</span>
+          <div class="dec-sep-options">
+            <button class="dec-sep-btn active" id="ds-dot" onclick="setDecSep('.')">1.00</button>
+            <button class="dec-sep-btn" id="ds-comma" onclick="setDecSep(',')">1,00</button>
+          </div>
+        </div>
+
         <div class="input-group">
           <div class="input-label">Concentration Values<span class="input-hint">Column A</span></div>
           <textarea id="concInput" rows="7" placeholder="0.1&#10;0.5&#10;1&#10;2&#10;5&#10;10&#10;20&#10;50"></textarea>
