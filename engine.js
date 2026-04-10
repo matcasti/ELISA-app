@@ -162,8 +162,6 @@ function solve3(A,b){
 
 function fitExponential(x,y){
   var lny=y.map(function(v){return Math.log(Math.max(v,1e-10));});
-  var r=fitLinear(x,lny),a=Math.exp(r.inv(0)/(-r.fn(0)/r.fn(1)));
-  // simpler: ln(y)=ln(a)+bx
   var n=x.length,sx=0,slny=0,sxlny=0,sx2=0;
   for(var i=0;i<n;i++){sx+=x[i];slny+=lny[i];sxlny+=x[i]*lny[i];sx2+=x[i]*x[i];}
   var b=(n*sxlny-sx*slny)/(n*sx2-sx*sx),lna=(slny-b*sx)/n;
@@ -192,10 +190,11 @@ function nlsFit(p0,x,y,mFn,maxIter){
     var loss=pred.reduce(function(s,v,i){return s+(v-y[i])*(v-y[i]);},0);
     if(Math.abs(prev-loss)<1e-13)break;prev=loss;
     var grad=p.map(function(_,j){
-      var d=Math.abs(p[j])*1e-5+1e-8,pp=p.slice();pp[j]+=d;
-      var pred2=x.map(function(xv){return mFn(pp,xv);});
-      var l2=pred2.reduce(function(s,v,i){return s+(v-y[i])*(v-y[i]);},0);
-      return(l2-loss)/d;
+      var d=Math.abs(p[j])*1e-5+1e-8;
+      var pp=p.slice(),pm=p.slice();pp[j]+=d;pm[j]-=d;
+      var lp=x.map(function(xv){return mFn(pp,xv);}).reduce(function(s,v,i){return s+(v-y[i])*(v-y[i]);},0);
+      var lm=x.map(function(xv){return mFn(pm,xv);}).reduce(function(s,v,i){return s+(v-y[i])*(v-y[i]);},0);
+      return(lp-lm)/(2*d);
     });
     var gnorm=Math.sqrt(grad.reduce(function(s,v){return s+v*v;},0));
     if(gnorm<1e-12)break;
@@ -206,19 +205,25 @@ function nlsFit(p0,x,y,mFn,maxIter){
   return p;
 }
 
-function invertNum(fn,yv,xRef){
-  var lo=Math.min.apply(null,xRef)*0.001,hi=Math.max.apply(null,xRef)*1000;
-  for(var i=0;i<80;i++){var mid=(lo+hi)/2;if((fn(lo)-yv)*(fn(mid)-yv)<=0)hi=mid;else lo=mid;}
-  return(lo+hi)/2;
+function invertNum(fn, yv, xRef, maxExtrap) {
+  var limit = maxExtrap !== undefined ? maxExtrap : 1000;
+  var lo = Math.max(Math.min.apply(null, xRef) * 0.001, 1e-10);
+  var hi = Math.max.apply(null, xRef) * limit;
+  for (var i = 0; i < 80; i++) {
+    var mid = (lo + hi) / 2;
+    if ((fn(lo) - yv) * (fn(mid) - yv) <= 0) hi = mid;
+    else lo = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 function fit4PL(x,y){
   var A=Math.min.apply(null,y)*0.9,D=Math.max.apply(null,y)*1.1,C=mean(x);
   var mFn=function(p,xv){return p[3]+(p[0]-p[3])/(1+Math.pow(Math.max(xv/p[2],1e-10),p[1]));};
-  var p=nlsFit([A,1.5,C,D],x,y,mFn,4000);
+  var p=nlsFit([A,1.5,C,D],x,y,mFn,10000);
   return{
     fn:function(xv){return p[3]+(p[0]-p[3])/(1+Math.pow(Math.max(xv/p[2],1e-10),p[1]));},
-    inv:function(yv){var r=(p[0]-p[3])/(yv-p[3])-1;if(r<=0)return NaN;return p[2]*Math.pow(r,1/p[1]);},
+    inv:function(yv){if(Math.abs(yv-p[3])<1e-12)return Infinity;var r=(p[0]-p[3])/(yv-p[3])-1;if(r<=0)return NaN;return p[2]*Math.pow(r,1/p[1]);},
     label:'4PL: A='+p[0].toFixed(3)+', B='+p[1].toFixed(3)+', C='+p[2].toFixed(3)+', D='+p[3].toFixed(3)
   };
 }
@@ -226,7 +231,7 @@ function fit4PL(x,y){
 function fit5PL(x,y){
   var A=Math.min.apply(null,y)*0.9,D=Math.max.apply(null,y)*1.1,C=mean(x);
   var mFn=function(p,xv){return p[3]+(p[0]-p[3])/Math.pow(1+Math.pow(Math.max(xv/p[2],1e-10),p[1]),p[4]);};
-  var p=nlsFit([A,1.5,C,D,1.0],x,y,mFn,5000);
+  var p=nlsFit([A,1.5,C,D,1.0],x,y,mFn,10000);
   var fn=function(xv){return p[3]+(p[0]-p[3])/Math.pow(1+Math.pow(Math.max(xv/p[2],1e-10),p[1]),p[4]);};
   return{fn:fn,inv:function(yv){return invertNum(fn,yv,x);},
     label:'5PL: A='+p[0].toFixed(3)+', B='+p[1].toFixed(3)+', C='+p[2].toFixed(3)+', D='+p[3].toFixed(3)+', E='+p[4].toFixed(3)};
@@ -250,10 +255,81 @@ function fitSpline(x,y){
   return{fn:spFn,inv:function(yv){return invertNum(spFn,yv,xs);},label:'Cubic Spline ('+n+' knots)'};
 }
 
+function fit6PL(x,y){
+  // 6PL = 5PL sigmoid + linear tilt term (F·x)
+  // Models hook effects and non-flat asymptotes common in high-dose ELISA zones
+  var A=Math.min.apply(null,y)*0.9,D=Math.max.apply(null,y)*1.1,C=mean(x);
+  var mFn=function(p,xv){
+    var xc=Math.max(xv/Math.max(p[2],1e-10),1e-10);
+    return p[3]+(p[0]-p[3])/Math.pow(1+Math.pow(xc,p[1]),p[4])+p[5]*xv;
+  };
+  var p=nlsFit([A,1.5,C,D,1.0,0.0],x,y,mFn,10000);
+  var fn=function(xv){
+    var xc=Math.max(xv/Math.max(p[2],1e-10),1e-10);
+    return p[3]+(p[0]-p[3])/Math.pow(1+Math.pow(xc,p[1]),p[4])+p[5]*xv;
+  };
+  return {
+    fn: fn,
+    // Limit extrapolation to 1.5x max concentration to avoid the non-injective hook
+    inv: function(yv) { return invertNum(fn, yv, x, 1.5); },
+    label: '6PL: A='+p[0].toFixed(3)+' B='+p[1].toFixed(3)+' C='+p[2].toFixed(3)+' D='+p[3].toFixed(3)+' E='+p[4].toFixed(3)+' F='+p[5].toFixed(5)
+  };
+}
+
+function fitGompertz(x,y){
+  // Gompertz on log-x: y = A + (D-A)·exp(-exp(-B·(ln(x)-ln(C))))
+  // Asymmetric sigmoidal — inflection at y ≈ A + (D-A)/e ≈ 63% of range
+  // Climbs faster at low concentrations, slower toward upper asymptote
+  var A=Math.min.apply(null,y)*0.9,D=Math.max.apply(null,y)*1.1,C=mean(x);
+  var mFn=function(p,xv){
+    var lnr=Math.log(Math.max(xv,1e-10))-Math.log(Math.max(p[2],1e-10));
+    return p[0]+(p[3]-p[0])*Math.exp(-Math.exp(-p[1]*lnr));
+  };
+  var p=nlsFit([A,1.0,C,D],x,y,mFn,10000);
+  var fn=function(xv){
+    var lnr=Math.log(Math.max(xv,1e-10))-Math.log(Math.max(p[2],1e-10));
+    return p[0]+(p[3]-p[0])*Math.exp(-Math.exp(-p[1]*lnr));
+  };
+  return {fn: fn, inv:function(yv) {
+    var ratio = (yv - p[0]) / (p[3] - p[0]);
+    if (ratio <= 0 || ratio >= 1) return invertNum(fn, yv, x);
+    // Use the mathematically equivalent C_eff to maintain bijectivity
+    var C_eff = Math.max(p[2], 1e-10);
+    return C_eff * Math.exp(-Math.log(-Math.log(ratio)) / p[1]);
+  }, label: 'Gompertz: A='+p[0].toFixed(3)+' B='+p[1].toFixed(3)+' C='+p[2].toFixed(3)+' D='+p[3].toFixed(3)};
+}
+
+function fitWeibull(x,y){
+  // Weibull CDF: y = A + (D-A)·(1 - exp(-(x/C)^B))
+  // Right-skewed — rapid initial rise, slow saturation; useful when lower
+  // concentrations drive most of the response dynamic range
+  var A=Math.min.apply(null,y)*0.9,D=Math.max.apply(null,y)*1.1,C=mean(x);
+  var mFn=function(p,xv){
+    var xc=Math.max(xv,1e-10)/Math.max(p[2],1e-10);
+    return p[0]+(p[3]-p[0])*(1-Math.exp(-Math.pow(xc,p[1])));
+  };
+  var p=nlsFit([A,1.5,C,D],x,y,mFn,10000);
+  var fn=function(xv){
+    var xc=Math.max(xv,1e-10)/Math.max(p[2],1e-10);
+    return p[0]+(p[3]-p[0])*(1-Math.exp(-Math.pow(xc,p[1])));
+  };
+  return{fn:fn,inv:function(yv){
+    var ratio=(yv-p[0])/(p[3]-p[0]);
+    if(ratio<=0||ratio>=1)return invertNum(fn,yv,x);
+    return p[2]*Math.pow(-Math.log(1-ratio),1/p[1]);
+  },label:'Weibull: A='+p[0].toFixed(3)+' B='+p[1].toFixed(3)+' C='+p[2].toFixed(3)+' D='+p[3].toFixed(3)};
+}
+
 // ── Fit ───────────────────────────────────────────────────────────────────────
 var refChartI=null,residChartI=null,sampleChartI=null;
 
 function fitCurve(){
+  var btn=document.querySelector('#panel1 .btn-primary');
+  var orig=btn.textContent;btn.textContent='⏳ Fitting…';btn.disabled=true;
+  setTimeout(function(){_fitCurve();btn.textContent=orig;btn.disabled=false;},18);
+}
+
+function _fitCurve(){
   var conc,abs;
   var tc=document.getElementById('twoColInput').value.trim();
   if(tc){var p=parseTwoCols(tc);conc=p.conc;abs=p.abs;}
@@ -272,6 +348,10 @@ function fitCurve(){
       case'4pl':r=fit4PL(conc,abs);break;
       case'5pl':r=fit5PL(conc,abs);break;
       case'spline':r=fitSpline(conc,abs);break;
+      case'6pl':r=fit6PL(conc,abs);break;
+      case'gompertz':r=fitGompertz(conc,abs);break;
+      case'weibull':r=fitWeibull(conc,abs);break;
+
       default:r=fitLinear(conc,abs);
     }
   }catch(e){showN('❌ Fitting failed: '+e.message);return;}
@@ -344,8 +424,8 @@ function predictConcentrations(){
   var valid=S.sampleResults.filter(function(r){return!isNaN(r.conc)&&r.conc>0;});
   var oor=S.sampleResults.filter(function(r){return r.oor;}).length;
   document.getElementById('s-stat-n').textContent=S.sampleResults.length;
-  document.getElementById('s-stat-min').textContent=valid.length?Math.min.apply(null,valid.map(function(r){return r.conc;})).toFixed(3):'—';
-  document.getElementById('s-stat-max').textContent=valid.length?Math.max.apply(null,valid.map(function(r){return r.conc;})).toFixed(3):'—';
+  document.getElementById('s-stat-min').textContent=valid.length?fmtNum(Math.min.apply(null,valid.map(function(r){return r.conc;})),3):'—';
+  document.getElementById('s-stat-max').textContent=valid.length?fmtNum(Math.max.apply(null,valid.map(function(r){return r.conc;})),3):'—';
   document.getElementById('s-stat-oor').textContent=oor;
   document.getElementById('sampleStats').style.display='grid';
   var tbody=document.getElementById('resultsBody');tbody.innerHTML='';

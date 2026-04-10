@@ -113,6 +113,9 @@
           <div class="model-card" onclick="selectModel('4pl')" id="m-4pl"><div class="model-name"><div class="check">✓</div>4PL Sigmoid</div><div class="model-eq">y=D+(A-D)/(1+(x/C)^B)</div></div>
           <div class="model-card" onclick="selectModel('5pl')" id="m-5pl"><div class="model-name"><div class="check">✓</div>5PL Sigmoid</div><div class="model-eq">y=D+(A-D)/(1+(x/C)^B)^E</div></div>
           <div class="model-card" onclick="selectModel('spline')" id="m-spline"><div class="model-name"><div class="check">✓</div>Cubic Spline</div><div class="model-eq">piecewise cubic</div></div>
+          <div class="model-card" onclick="selectModel('6pl')" id="m-6pl" title="5PL + linear tilt term (F·x). Use when high-concentration hook effects or background drift cause the upper asymptote to slope rather than flatten."><div class="model-name"><div class="check">✓</div>6PL Sigmoid</div> <div class="model-eq">5PL + F·x (hook/drift)</div> </div>
+          <div class="model-card" onclick="selectModel('gompertz')" id="m-gompertz" title="Gompertz on log-x scale. Asymmetric sigmoid that rises faster at low concentrations and saturates slowly. Good fit when data is left-skewed on the log-concentration axis."><div class="model-name"><div class="check">✓</div>Gompertz</div> <div class="model-eq">A+(D-A)·exp(-exp(-B·ln(x/C)))</div> </div>
+          <div class="model-card" onclick="selectModel('weibull')" id="m-weibull" title="Weibull CDF. Right-skewed asymmetric curve — rapid initial rise with a slow approach to the upper asymptote. Useful when most signal dynamic range lies at low concentrations."><div class="model-name"><div class="check">✓</div>Weibull</div> <div class="model-eq">A+(D-A)·(1−e^−(x/C)^B)</div> </div>
         </div>
         <button class="btn btn-primary" onclick="fitCurve()" style="width:100%;justify-content:center">⚡ Fit Reference Curve</button>
       </div>
