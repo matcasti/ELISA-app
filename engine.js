@@ -414,12 +414,16 @@ function predictConcentrations(){
   if(!S.curveReady)return;
   var absVals=parseVals(document.getElementById('sampleAbsInput').value);
   var lbls=document.getElementById('sampleLabels').value.split('\n').map(function(l){return l.trim();}).filter(function(l){return l;});
+  var dfRaw=document.getElementById('dilutionFactors').value.split('\n').map(function(l){return l.trim();});
   if(!absVals.length){showN('⚠️ Enter sample absorbance values.');return;}
   var amin=Math.min.apply(null,S.refAbs),amax=Math.max.apply(null,S.refAbs);
   S.sampleResults=absVals.map(function(ab,i){
     var lbl=lbls[i]||'Sample_'+String(i+1).padStart(2,'0');
-    var conc=S.inverseFn(ab);
-    return{label:lbl,abs:ab,conc:conc,oor:ab<amin||ab>amax};
+    var dfParsed=parseFloat(normNum(dfRaw[i]||''));
+    var df=(isFinite(dfParsed)&&dfParsed>0)?dfParsed:1;
+    var concRaw=S.inverseFn(ab);
+    var conc=concRaw*df;
+    return{label:lbl,abs:ab,conc:conc,concRaw:concRaw,df:df,oor:ab<amin||ab>amax};
   });
   var valid=S.sampleResults.filter(function(r){return!isNaN(r.conc)&&r.conc>0;});
   var oor=S.sampleResults.filter(function(r){return r.oor;}).length;
@@ -433,7 +437,8 @@ function predictConcentrations(){
     var tr=document.createElement('tr');
     var cv=isNaN(r.conc)||r.conc<=0?'N/A':r.conc.toFixed(4);
     var fl=r.oor?'<span class="flag">OOR</span>':'<span class="ok-flag">✓ OK</span>';
-    tr.innerHTML='<td>'+(i+1)+'</td><td>'+r.label+'</td><td>'+r.abs.toFixed(4)+'</td><td class="conc-val">'+cv+'</td><td>'+fl+'</td>';
+    var dfDisplay=(r.df===1)?'<span style="color:var(--text3)">1×</span>':'<span style="color:var(--accent2);font-weight:600">'+fmtNum(r.df,4).replace(/\.?0+$/,'')+'×</span>';
+    tr.innerHTML='<td>'+(i+1)+'</td><td>'+r.label+'</td><td>'+r.abs.toFixed(4)+'</td><td>'+dfDisplay+'</td><td class="conc-val">'+cv+'</td><td>'+fl+'</td>';
     tbody.appendChild(tr);
   });
   document.getElementById('resultsWrap').style.display='block';
@@ -452,7 +457,7 @@ function drawSampleChart(){
   sampleChartI=new Chart(ctx,{type:'scatter',data:{datasets:[
     {label:'Fitted Curve',data:cx.map(function(v,i){return{x:v,y:cy[i]};}),type:'line',borderColor:'rgba(123,97,255,0.65)',borderWidth:2,pointRadius:0,fill:false},
     {label:'Reference',data:S.refConc.map(function(v,i){return{x:v,y:S.refAbs[i]};}),backgroundColor:'rgba(0,229,255,0.45)',borderColor:'#00e5ff',pointRadius:5},
-    {label:'Samples',data:S.sampleResults.map(function(r){return{x:r.conc,y:r.abs};}),backgroundColor:'#ff4d8d',borderColor:'#ff4d8d',pointRadius:7,pointStyle:'triangle'}
+    {label:'Samples',data:S.sampleResults.map(function(r){return{x:r.concRaw,y:r.abs};}),backgroundColor:'#ff4d8d',borderColor:'#ff4d8d',pointRadius:7,pointStyle:'triangle'}
   ]},options:mkOpts('Concentration','Absorbance (OD)')});
 }
 
@@ -463,6 +468,7 @@ function getRows(){
       Index:i+1,
       Label:r.label,
       Absorbance:fmtNum(r.abs,4),
+      Dilution_Factor:fmtNum(r.df,4).replace(/\.?0+$/,''),
       Concentration:isNaN(r.conc)||r.conc<=0?'N/A':fmtNum(r.conc,4),
       Status:r.oor?'Out of Range':'OK'
     };
@@ -501,7 +507,7 @@ function downloadJSON(){
       return{concentration:fmtNum(v,6),absorbance:fmtNum(S.refAbs[i],6)};
     }),
     sampleResults:S.sampleResults.map(function(r){
-      return{label:r.label,absorbance:fmtNum(r.abs,4),concentration:isNaN(r.conc)||r.conc<=0?'N/A':fmtNum(r.conc,4),status:r.oor?'Out of Range':'OK'};
+      return{label:r.label,absorbance:fmtNum(r.abs,4),dilution_factor:r.df,concentration:isNaN(r.conc)||r.conc<=0?'N/A':fmtNum(r.conc,4),status:r.oor?'Out of Range':'OK'};
     })
   };
   dlFile(JSON.stringify(data,null,2),'elisa_results.json','application/json');

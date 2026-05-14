@@ -158,6 +158,11 @@
           <div class="input-label">Sample Labels (optional)<span class="input-hint">One per row</span></div>
           <textarea id="sampleLabels" rows="5" placeholder="Sample_01&#10;Sample_02&#10;Control_Pos&#10;Unknown_A&#10;Unknown_B"></textarea>
         </div>
+        <div class="alert alert-info">💡 Enter the dilution factor applied to each sample before measurement (e.g. <strong>10</strong> for a 1:10 dilution). Leave blank or enter <strong>1</strong> for undiluted samples. One value per row — order must match absorbance values above.</div>
+        <div class="input-group">
+          <div class="input-label">Dilution Factors<span class="input-hint">One per row (default: 1)</span></div>
+          <textarea id="dilutionFactors" rows="5" placeholder="1&#10;10&#10;100&#10;1&#10;2.5"></textarea>
+        </div>
         <button class="btn btn-primary" onclick="predictConcentrations()" style="width:100%;justify-content:center">🔬 Calculate Concentrations</button>
         <div id="copySection" style="display:none">
           <div class="divider"></div>
@@ -200,7 +205,7 @@
           <div class="results-table-header"><div class="results-table-title">Quantification Results</div><div class="chart-badge" id="resultsBadge">—</div></div>
           <div style="max-height:310px;overflow-y:auto">
             <table class="results-table" id="resultsTable">
-              <thead><tr><th>#</th><th>Label</th><th>Absorbance</th><th>Concentration</th><th>Status</th></tr></thead>
+              <thead><tr><th>#</th><th>Label</th><th>Absorbance</th><th>Dil. Factor</th><th>Concentration</th><th>Status</th></tr></thead>
               <tbody id="resultsBody"></tbody>
             </table>
           </div>
